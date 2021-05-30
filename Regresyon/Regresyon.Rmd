@@ -1,0 +1,584 @@
+---
+title: "Final Ödevi"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("C:/Users/cberk/Downloads")
+lowbwt<-read.table("lowbwt.txt")
+colnames(lowbwt)<-c("ID","LOW","AGE","LWT","RACE","SMOKE","PTL","HT","UI","FTV","BWT")
+data<-lowbwt[,-2]
+data.new<-data[,-1]
+```
+
+
+```{r}
+smp_size <- floor(0.7 * nrow(data.new))
+set.seed(021)
+train1 <- sample(nrow(data.new), size = smp_size,
+replace = FALSE)
+train <- data.new[train1, ]
+test <- data.new[-train1, ] #Train %70, test %30 olarak veriyi ayırdım
+```
+
+1. LM Modeli
+```{r}
+
+data.new$RACE<-as.factor(data.new$RACE)
+data.new$SMOKE<-as.factor(data.new$SMOKE)
+data.new$PTL<-as.factor(data.new$PTL)
+data.new$HT<-as.factor(data.new$HT)
+data.new$UI<-as.factor(data.new$UI)
+data.new$FTV<-as.factor(data.new$FTV)
+train <- data.new[train1, ]
+test <- data.new[-train1, ]
+model_lm=lm(BWT~.,data=train)
+summary(model_lm)
+
+
+```
+PTL2,FTV2,3,4,6 ve AGE katsayılarının p değerleri 0.05 den büyük olduğu için anlamsız çıktığı söylenebilir.
+```{r}
+library(car)
+vif(model_lm)
+
+
+```
+-Burada bütün değişkenlerin VIF değerleri 5 den küçük çıkmıştır.Çoklu doğrusal bağlantı problemi yoktur.
+```{r}
+library(olsrr)
+a=ols_step_all_possible(model_lm)
+plot(a)
+
+```
+En yüksek R2 değerlerini 247 ve 255 göstermiştir.Cp,AIC,BIc değerlerinde de bu gözlemler en düşük değerleri vermiştir.
+```{r}
+
+s=ols_step_both_p(model_lm)
+s$model
+```
+Modeli UI,RACE,SMOKE,HT,LWT ile tekrar kuruyoruz.
+```{r}
+data.lm<-data.new[,-8]
+data.lm<-data.lm[,-5]
+data.lm<-data.lm[,-1]
+train.lm<-train[,-8]
+train.lm<-train.lm[,-5]
+train.lm<-train.lm[,-1]
+test.lm<-test[,-8]
+test.lm<-test.lm[,-5]
+test.lm<-test.lm[,-1]
+model_lm_new=lm(BWT~UI+RACE+SMOKE+HT+LWT, data=train.lm)
+summary(model_lm_new)
+```
+Bütün Katsayılar anlamlı çıkmıştır.
+```{r}
+shapiro.test(model_lm_new$residuals)
+
+
+```
+P>0.05 çıktığı için normal dağıldığı söylenebilir.
+```{r}
+library(lmtest)
+bptest(model_lm_new)
+```
+P>0.05 olduğu için hatalar sabit varyanslıdır.
+```{r}
+hatvalues(model_lm_new)
+hatvalues(model_lm_new)>2*mean(hatvalues(model_lm_new))
+which(hatvalues(model_lm_new)>2*mean(hatvalues(model_lm_new)))
+```
+Kaldıraç Noktalarını verir.(2   3  22  40  59  74  78  94 102 104 114 118 121 125)
+
+
+```{r}
+st.res=model_lm_new$residuals/sd(model_lm_new$residuals)
+plot(hatvalues(model_lm_new),st.res)
+abline(h=c(-2,2),v=2*mean(hatvalues(model_lm_new)))
+identify(hatvalues(model_lm_new),st.res)
+```
+```{r}
+par(mfrow=c(1,1))
+plot(train.lm$BWT,cooks.distance(model_lm_new))
+abline(h=4/length(train.lm$BWT)-5)
+identify(train.lm$BWT,cooks.distance(model_lm_new))
+predictions2= predict(model_lm_new, train.lm)
+rmse.reg_train<-sqrt(mean((predictions2-train.lm$BWT)^2))
+rmse.reg_train
+
+
+
+```
+Etkin gözlem çıkmamıştır.Kaldıraç noktaları ile herhangi bir ortak nokta olmadığı için herhangi bir gözlem verisetinden çıkarılmamıştır.
+
+# Test verisi uzerinde tahminleme
+```{r}
+predictions1=predict(model_lm_new,test.lm)
+rmse.reg<-sqrt(mean((predictions1-test.lm$BWT)^2))
+rmse.reg
+```
+
+
+
+2.Regresyon Agaci
+```{r}
+library(tree)
+set.seed(021)
+train2=sample(1:nrow(data.new),nrow(data.new)*0.7)
+tree_lwt=tree(BWT~.,data=data.new, subset= train2)
+plot(tree_lwt)
+text(tree_lwt)
+summary(tree_lwt)
+```
+14 Terminal node dan oluşur. Kok dugumu LWT<109.5 dur.
+
+
+```{r}
+cv_lwt=cv.tree(tree_lwt)
+plot(cv_lwt$size,cv_lwt$dev, type="b")
+
+```
+Dirsekte kesilmesi için 3 ile 6 dan biri seçilmelidir.Ben 3 ü seçtim
+
+```{r}
+set.seed(021)
+train2=sample(1:nrow(data.new),nrow(data.new)*0.7)
+prune_lwt=prune.tree(tree_lwt,best=2)
+plot(prune_lwt)
+text(prune_lwt)
+yhat_train<-predict(prune_lwt,newdata=data.new[train2,])
+lowbwt_train<-data.new[train2,"BWT"]
+rmse.tree_train<-sqrt(mean((yhat_train-lowbwt_train)^2))
+rmse.tree_train
+
+
+
+```
+#Test Verisi uzerinde tahminleme
+```{r}
+yhat<-predict(prune_lwt,newdata=data.new[-train2,])
+lowbwt.test<-data.new[-train2,"BWT"]
+rmse.tree<-sqrt(mean((yhat-lowbwt.test)^2))
+rmse.tree
+```
+
+
+
+
+3.Bagging ile Regresyon Agaci
+
+```{r}
+library(randomForest)
+set.seed(021)
+train2=sample(1:nrow(data.new),nrow(data.new)*0.7)
+bag.lwt<-randomForest(BWT~.,data=data.new,subset = train2, mtry=8 , importance=TRUE)
+lowbwt.train<-data.new[train2,"BWT"]
+yhat.bag_train<-predict(bag.lwt,newdata=data.new[train2,])
+rmse.bag_train<-sqrt(mean((yhat.bag_train-lowbwt_train)^2))
+plot(yhat.bag_train,lowbwt.train)
+abline(0,1)
+rmse.bag_train
+
+```
+#Test verisi uzerinde tahminleme
+```{r}
+lowbwt.test<-data.new[-train2,"BWT"]
+yhat.bag<-predict(bag.lwt,newdata=data.new[-train2,])
+rmse.bag<-sqrt(mean((yhat.bag-lowbwt.test)^2))
+rmse.bag
+```
+
+
+4.Rassal Ormanlar Regresyonu
+
+```{r}
+set.seed(021)
+train2=sample(1:nrow(data.new),nrow(data.new)*0.7)
+rf.lowbwt<-randomForest(BWT~., data=data.new, subset= train2, mtry=2, importance=TRUE)
+yhat.rf_train<-predict(rf.lowbwt, newdata=data.new[train2,])#train
+lowbwt_train<-data.new[train2,"BWT"]#train
+plot(yhat.rf_train,lowbwt_train)
+abline(0,1)
+rmse.rf_train<-sqrt(mean((yhat.rf_train-lowbwt_train)^2))#train
+rmse.rf_train#train
+
+```
+
+```{r}
+yhat.rf<-predict(rf.lowbwt, newdata=data.new[-train2,])
+lowbwt.test<-data.new[-train2,"BWT"]
+rmse.rf<-sqrt(mean((yhat.rf-lowbwt.test)^2))
+rmse.rf
+```
+
+5.Test Verisi Üzerinde Performanslar
+
+```{r}
+cbind(rmse.reg,rmse.tree,rmse.bag,rmse.rf)
+
+
+```
+RMSE'si en düşük olan doğrusal regresyon yöntemi ile oluşturulan model olmuştur. Bu kritere göre doğrusal regresyon yöntemi ile oluşturulan model seçilmelidir.
+
+
+B.Yanıt Değişkeni LOW olarak alınacak.
+
+```{r}
+data2<-lowbwt[-11]
+data2.new<-data2[-1]
+```
+
+```{r}
+
+set.seed(021)
+train3=sample(1:nrow(data2.new),nrow(data2.new)*0.7)
+
+```
+
+6.Sınıflandırma Agaci
+
+```{r}
+data2.new$RACE<-as.factor(data2.new$RACE)
+data2.new$SMOKE<-as.factor(data2.new$SMOKE)
+data2.new$PTL<-as.factor(data2.new$PTL)
+data2.new$HT<-as.factor(data2.new$HT)
+data2.new$UI<-as.factor(data2.new$UI)
+data2.new$FTV<-as.factor(data2.new$FTV)
+data2.new$LOW<-as.factor(data2.new$LOW)
+str(data2.new)
+```
+
+```{r}
+set.seed(021)
+train3=sample(1:nrow(data2.new),nrow(data2.new)*0.7)
+tree.low=tree(as.factor(LOW)~.,data=data2.new, subset = train3)
+plot(tree.low)
+text(tree.low)
+str(data2.new)
+cv.cla=cv.tree(tree.low, FUN=prune.misclass)
+cv.cla
+par(mfrow=c(1,2))
+plot(cv.cla$size,cv.cla$dev, type="b")
+plot(cv.cla$k,cv.cla$dev, type="b")
+```
+5. daldan kesilmelidir.
+
+```{r}
+set.seed(021)
+train3=sample(1:nrow(data2.new),nrow(data2.new)*0.7)
+par(mfrow=c(1,1))
+prune.cla=prune.misclass(tree.low,best=5)
+plot(prune.cla)
+text(prune.cla)
+yhat_train<-predict(prune.cla,newdata=data2.new[train3,])
+cla_train<-data2.new[train3,]
+tree.pred=predict(prune.cla,cla_train, type="class")
+table=table(tree.pred,cla_train$LOW)
+accuracy_cla_train<-sum(diag(table))/sum(table)
+accuracy_cla_train
+
+
+```
+#Test Verisi uzerinde tahminleme
+```{r}
+yhat<-predict(prune.cla,newdata=data2.new[-train3,])
+cla.test<-data2.new[-train3,]
+tree.pred=predict(prune.cla,cla.test, type="class")
+table=table(tree.pred,cla.test$LOW)
+accuracy_cla<-sum(diag(table))/sum(table)
+accuracy_cla
+```
+
+
+7.Bagging ile Siniflandirma Agaci
+
+
+```{r}
+set.seed(021)
+train3=sample(1:nrow(data2.new),nrow(data2.new)*0.7)
+bag.low<-randomForest(as.factor(LOW)~.,data=data2.new,subset=train3,mtry=8,importance=TRUE)
+yhat.bag2_train<-predict(bag.low,newdata=cla_train)
+table=table(yhat.bag2_train,cla_train$LOW)
+table
+accuracy_bag_train=sum(diag(table))/sum(table)
+accuracy_bag_train
+```
+#Test verisi uzerinde tahminleme
+```{r}
+yhat.bag2<-predict(bag.low,newdata=cla.test)
+table=table(yhat.bag2,cla.test$LOW)
+accuracy_bag=sum(diag(table))/sum(table)
+accuracy_bag
+```
+
+
+8.Rassal Ormanlar ile Siniflandirma Agaci
+
+
+```{r}
+set.seed(021)
+train3=sample(1:nrow(data2.new),nrow(data2.new)*0.7)
+rf.low<-randomForest(as.factor(LOW)~.,data=data2.new,subset=train3,mtry=2,importance=TRUE)
+yhat.rf_train2<-predict(rf.low,newdata=cla_train)
+table=table(yhat.rf_train2,cla_train$LOW)
+table
+accuracy_rf_train<-sum(diag((table))/sum(table))
+accuracy_rf_train
+```
+#Test Verisi uzerinde tahminleme
+```{r}
+yhat.rf<-predict(rf.low,newdata=cla.test)
+table=table(yhat.rf,cla.test$LOW)
+accuracy_rf<-sum(diag((table))/sum(table))
+accuracy_rf
+```
+
+
+
+9.Lojistik Regresyon
+
+```{r}
+set.seed(021)
+train3=sample(1:nrow(data2.new),nrow(data2.new)*0.7)
+model.glm=glm(LOW~., data=data2.new,family=binomial)
+G=model.glm$null.deviance-model.glm$deviance
+G
+qchisq(0.95,1)
+
+```
+H0:Katsayıların hepsi sıfıra eşit
+H1:Katsayılardan en az biri sıfırdan farklı
+G değeri 46.1, qchisq değeri alfa 0.05 önem düzeyi için 3.84 çıktı. G değeri 3.84 den büyük olduğu için h0 red edilir, %95 güvenle model geçerlidir.
+
+
+```{r}
+library(MASS)
+library(dplyr)
+
+step.model <- model.glm %>% stepAIC(trace = FALSE)
+coef(step.model)
+
+
+```
+
+```{r}
+model_glm_best<-glm(as.factor(LOW)~LWT+RACE+SMOKE+PTL+HT+UI,data=data2.new,subset = train3,family=binomial)
+pearson.res.lwt<-residuals(model_glm_best,type="pearson")
+deviance.res.lwt<-residuals(model_glm_best,type="deviance")
+cbind(pearson.res.lwt,deviance.res.lwt)
+library(car)
+outlierTest(model_glm_best)
+```
+Herhangi bir ortak nokta olmadigi icin modelden herhangi bir gozlem cikartilmamistir.
+
+```{r}
+set.seed(021)
+train3=sample(1:nrow(data2.new),nrow(data2.new)*0.7)
+glm.test<-data2.new[-train3,]
+glm.train<-data2.new[train3,]
+model_glm_best2<-glm(as.factor(LOW)~LWT+RACE+SMOKE+PTL+HT+UI,data=glm.train,family=binomial)
+p.tahmin<-model_glm_best2$fitted.values
+p.tahmin.glm<-fitted(model_glm_best2)
+p.tahmin.glm[p.tahmin>0.5]=1
+p.tahmin.glm[p.tahmin<=0.5]=0
+library(caret)
+table=table(as.factor(p.tahmin.glm),as.factor(glm.train$LOW))
+table
+accuracy_glm_train<-sum(diag(table))/sum(table)
+accuracy_glm_train
+
+
+```
+
+#Test Verisi uzerinde tahminleme
+```{r}
+model_glm_best3<-glm(as.factor(LOW)~LWT+RACE+SMOKE+PTL+HT+UI,data=glm.test,family=binomial)
+p.tahmin2<-model_glm_best3$fitted.values
+p.tahmin.glm2<-fitted(model_glm_best3)
+p.tahmin.glm2[p.tahmin2>0.5]=1
+p.tahmin.glm2[p.tahmin2<=0.5]=0
+table=table(as.factor(p.tahmin.glm2),as.factor(glm.test$LOW))
+accuracy_glm<-sum(diag(table))/sum(table)
+accuracy_glm
+```
+
+
+10.LDA
+
+```{r}
+set.seed(021)
+smp_size <- floor(0.7 * nrow(data2.new))
+train4 <- sample(nrow(data2.new), size = smp_size,
+replace = FALSE)
+train5 <- data2.new[train4, ]
+test <- data2.new[-train4, ]
+
+train7<-train5[,-9]
+train7<-train7[,-8]
+train7<-train7[,-7]
+train7<-train7[,-6]
+train7<-train7[,-5]
+train7<-train7[,-4]
+library(MASS)
+library(mvnTest)
+
+model_lda<-lda(LOW~AGE+LWT,data=train7)
+tahmin_1<-predict(model_lda,train7)
+model_lda
+par(mfrow=c(1,1))
+hist_lda<-ldahist(data=tahmin_1$x[,1],g=train7$LOW)
+
+
+```
+LD1 e göre grup 0 ve 1 i ayırabilecek tek nokta -3 den küçük degerlerin grup 0 olması.Geriye kalan butun araliklarda kesisim var.
+
+
+
+```{r}
+sifir<-train7[train7$LOW=="0",]
+bir<-train7[train7$LOW=="1",]
+
+HZ.test(sifir[,-1])
+HZ.test(bir[,-1])
+library(heplots)
+DH.test(sifir[,-1])
+DH.test(bir[,-1])
+boxM(train7[,2:3],train7$LOW)
+
+
+
+```
+Bir olanlar multivariate normal cikmistir ancak sifir olanlar multivariate normal cikmamistir.
+boxM testinde p>0.05 oldugu icin H0 kabul edilmistir.Varyans homojenligi saglanmistir.
+
+```{r}
+tahmin_1_lda<-predict(model_lda,train7)
+cfmatrix_2<-table(Tahmin=tahmin_1_lda$class,Gercek=train7$LOW)
+cfmatrix_2
+accuracy_lda_train<-sum(diag(cfmatrix_2)/sum(cfmatrix_2))
+accuracy_lda_train
+```
+
+#Test verisi üzerinde tahminleme
+```{r}
+tahmin_1<-predict(model_lda,test)
+cfmatrix_2<-table(Tahmin=tahmin_1$class,Gercek=test$LOW)
+cfmatrix_2
+accuracy_lda_test<-sum(diag(cfmatrix_2)/sum(cfmatrix_2))
+accuracy_lda_test
+```
+
+
+11.QDA
+```{r}
+model_qda<-qda(LOW~AGE+LWT,data=train7)
+tahmin_qda_1<-predict(model_qda,train7)
+cfmatrix_qda_train<-table(Tahmin=tahmin_qda_1$class,Gercek=train7$LOW)
+accuracy_qda_train<-sum(diag(cfmatrix_qda_train/sum(cfmatrix_qda_train)))
+accuracy_qda_train
+
+```
+Train verisi üzerindeki tahminin accuracy hesabi
+
+```{r}
+tahmin_qda_2<-predict(model_qda,test)
+cfmatrix_qda_test<-table(Tahmin=tahmin_qda_2$class,Gercek=test$LOW)
+accuracy_qda_test<-sum(diag(cfmatrix_qda_test)/sum(cfmatrix_qda_test))
+accuracy_qda_test
+
+
+
+```
+Test verisi üzerindeki tahminin accuracy hesabi
+
+
+12.Test verisi üzerindeki performanslari
+```{r}
+cbind(accuracy_cla,accuracy_bag,accuracy_glm,accuracy_lda_test,accuracy_qda_test,accuracy_rf)
+
+
+```
+Bu durumda en iyi sonucu veren test verisi üzerindeki en yuksek accuracy e sahip olan lojistik regresyon olmustur.
+
+13.Tum modellere ait ROC egrisi ve AUC
+```{r}
+library(ROCR)
+
+
+pr.log <- prediction(p.tahmin.glm2, test$LOW)
+prf.log <- performance(pr.log, measure = "tpr", x.measure = "fpr")
+plot(prf.log, col="red")
+abline(0,1)
+
+tahmin=as.numeric(tahmin_1$class)
+tahmin=ifelse(tahmin<=1,0,1)
+pr.lda <- prediction(tahmin, test$LOW)
+prf.lda <- performance(pr.lda, measure = "tpr", x.measure = "fpr")
+plot(prf.lda, add=TRUE, col="blue")
+
+tahmin1=as.numeric(tahmin_qda_2$class)
+tahmin1=ifelse(tahmin1<=1,0,1)
+pr.qda <- prediction(tahmin1, test$LOW)
+prf.qda <- performance(pr.qda, measure = "tpr", x.measure = "fpr")
+plot(prf.qda, add=TRUE, col="yellow")
+
+
+tahmin=as.numeric(yhat.bag2)
+tahmin=ifelse(tahmin<=1,0,1)
+pr.bag <- prediction(tahmin, test$LOW)
+prf.bag<- performance(pr.bag, measure = "tpr", x.measure = "fpr")
+plot(prf.bag, col="gray", add=TRUE)
+
+tahmin=as.numeric(yhat.rf)
+tahmin=ifelse(tahmin<=1,0,1)
+pr.rf <- prediction(tahmin, test$LOW)
+prf.rf<- performance(pr.rf, measure = "tpr", x.measure = "fpr")
+plot(prf.rf, col="brown", add=TRUE)
+
+
+
+
+tree.pred=predict(prune.cla,cla.test, type="class")
+tahmin=as.numeric(tree.pred)
+tahmin=ifelse(tahmin<=1,0,1)
+pr.tree <- prediction(tahmin, test$LOW)
+prf.tree<- performance(pr.tree, measure = "tpr", x.measure = "fpr")
+plot(prf.tree, col="green", add=TRUE)
+```
+```{r}
+auc.lda <- performance(pr.lda, measure = "auc")
+auc.lda <- auc.lda@y.values[[1]]
+auc.lda
+
+auc.log <- performance(pr.log, measure = "auc")
+auc.log <- auc.log@y.values[[1]]
+auc.log
+
+auc.tree <- performance(pr.tree, measure = "auc")
+auc.tree <- auc.tree@y.values[[1]]
+auc.tree
+
+auc.qda <- performance(pr.qda, measure = "auc")
+auc.qda <- auc.qda@y.values[[1]]
+auc.qda
+
+auc.rf <- performance(pr.rf, measure = "auc")
+auc.rf <- auc.rf@y.values[[1]]
+auc.rf
+
+auc.bag <- performance(pr.bag, measure = "auc")
+auc.bag <- auc.bag@y.values[[1]]
+auc.bag
+
+cbind(auc.bag,auc.lda,auc.log,auc.qda,auc.rf,auc.tree)
+```
+AUC degerlerine gore en yuksek degeri veren lojistik regresyon modeli olmustur.
+
+
+13.
+En uygun modellemenin lojistik regresyon oldugunu dusunuyorum. Sebebi ise varsayımların hepsini yerine getirerek yuksek accuracy ile tahminleme yapti.LDA ve QDA da multivariate normality sorunu var. Rf,Regresyon agaci v.b problemlerdeki budama kisimlarinda hiç alternatif yok, hepsinde tek budanacak nokta cikmasi bende problemi aciklamak icin dogru yontem olmadigi hissi uyandirdi.
+
