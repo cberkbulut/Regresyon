@@ -1,0 +1,349 @@
+---
+title: "Untitled"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+
+library(fBasics)
+library(corrplot)
+library(corrplot)
+library("car")
+library(olsrr)
+library("lmtest")
+library("tidyverse")
+library("caret")
+library(tidyverse)
+library(ModelMetrics)
+library(Hmisc)
+library(ISLR)
+library(MASS)
+library(pROC)
+```
+```{r fig.height=2.8, fig.width=3.5}
+
+```
+```{r Warning=F , message=F}
+
+```
+
+
+```{r }
+setwd("C:/Users/cberk/Downloads")
+veri<-read.csv(file="vize.csv")
+smp_size<-floor(0.7*nrow(veri))
+set.seed(021)
+train_ind<-sample(nrow(veri),size=smp_size,replace=FALSE)
+train.veri<-veri[train_ind,]
+test<-veri[-train_ind,]
+names(train.veri)
+
+```
+1.Tanımlayıcı istatistikleri grafiklerle destekleyerek elde ediniz ve yorumlayınız
+
+```{r}
+summary(train.veri)
+
+
+
+
+```
+
+
+```{r}
+par(mfrow=c(2,3))
+hist(train.veri$AT,main="Sıcaklık")
+hist(train.veri$V,main ="Vakum")
+hist(train.veri$AP,main="OrtamBasinci")
+hist(train.veri$RH, main="Bagilnem")
+hist(train.veri$PE,main="Enerji")
+```
+AT değişkeninin min değeri 1.81, max değeri 37.11 dir, median değeri mean değerinden büyük olduğu için soldan çarpıktır diyebiliriz.
+V değişkeninin min değeri 25.36, max değeri 80.25 dir, median değeri mean değerinden küçük olduğu için sağdan çarpıktır diyebiliriz.
+AP değişkeninin min değeri 992.9, max değeri 1033.3 dür, median değeri mean değerine çok yakın olduğu için simetrik dağılıma sahiptir diyebiliriz.
+RH değişkeninin min değeri 25.56, max değeri 100.16 dır, median değeri mean değerinden büyük olduğu için soldan çarpıktır diyebiliriz.
+PE değişkeninin min değeri 420.3, max değeri 495.8 dir, median değeri mean değerinden küçük olduğu için sağdan çarpıktır diyebiliriz.
+
+
+
+2.Matris Plot oluşturarak yorumlayınız
+
+```{r}
+pairs(train.veri,lower.panel = NULL)
+
+```
+AT ve V  değişkenleri arasında  eğrisel bir ilişki görülmektedir.
+AP ve AT değişkenleri arasında bir ilişki görülmemektedir.
+AT ve RH değişkenleri arasında net olmamakla birlikte bir ilişki görülmektedir.
+AT ve PE değişkenleri arasında ters ilişki görülmektedir.
+AP ve V değişkenleri arasında bir ilişki görülmemektedir.
+V ve RH değişkenleri arasında bir ilişki görülmemektedir.
+V ve PE değişkenleri arasında ters ilişki görülmektedir.
+AP ve RH değişkenleri arasında bir ilişki görülmemektedir.
+AP ve PE değişkenleri arasında bir ilişki görülmemektedir.
+RH ve PE değişkenleri arasında net bir ilişki görülmemektedir.
+
+
+
+
+
+
+
+3.Çoklu doğrusal regresyon modelini elde ediniz ve model geçerliliğini sıfır ve alternatif hipotezleri belirterek %5 önem düzeyinde test ediniz
+
+
+```{r}
+model=lm(PE~AT+V+AP+RH,data=train.veri)
+summary(model)
+
+
+
+
+
+
+```
+H0: dogrusal iliski yok
+H1: en az 1 bagımsız değişken Y yi etkiler
+
+p value, alfa(0.05) den küçük olduğu için  en az 1 katsayı model için anlamlıdır.
+
+4.Hipotezleri yazarak elde ettiğiniz modeldeki anlamlı katsayıları belirleyiniz
+
+p value yazan sütuna bakarsak bütün katsayıların model için anlamlı olduğunu söyleyebiliriz.
+
+
+5.VIF değerlerini hesaplayınız ve yorumlayınız
+
+
+```{r}
+vif(model)
+```
+AT değişkeninin vif değeri 5 ten büyük çıkmıştır, çoklu doğrusal bağlantı problemi vardır.
+
+
+
+6.En iyi olası alt küme değişken seçim yöntemini uygulayarak alternatif iki model belirleyiniz. Gerekçelerini belirtiniz
+```{r}
+
+a=ols_step_all_possible(model)
+plot(a)
+```
+R2 değerlerine bakıldığında en yüksek değeri verenler 11 ve 15 tir.
+Ayrıca 11 ve 15. modeller AIC BIC Cp değerlerinde de en düşük değerleri veren modellerdir.
+
+
+
+
+
+```{r}
+model1=lm(PE~AT+V+AP+RH,data=test)
+model2=lm(PE~AT+V+RH,data=test)
+predictions1=predict(model1,test)
+predictions2=predict(model2,test)  
+RMSE1=RMSE(predictions1,test$PE)  
+RMSE2=RMSE(predictions2,test$PE)  
+mae1=mae(predictions1,test$PE)
+mae2=mae(predictions2,test$PE)
+cbind(mae1,mae2,RMSE1,RMSE2)
+  
+ols_press(model1)
+ols_press(model2)
+
+```
+mae rmse ve press testlerinin hepsinde model 1 model 2 den daha düşük değer vermiştir, dolayısıyla model 1 model 2 den daha uygundur.
+
+
+
+```{r}
+par(mfrow=c(2,2))
+modelbest=lm(PE~AT+V+AP+RH,data=train.veri)
+bc=boxcox(modelbest,lambda = seq(-3,3))
+best.lam=bc$x[which(bc$y==max(bc$y))]
+modelbest1=lm(PE^(-2)~AT+V+AP+RH,data=train.veri)
+qqnorm(modelbest1$residuals, pch = 1, frame = T)
+plot(modelbest1)
+hist(modelbest1$residuals)
+which(hatvalues(modelbest1)>2*mean(hatvalues(modelbest1)))
+jarqueberaTest(modelbest1$residuals)
+bptest(modelbest1)
+vif(modelbest1)
+train.new<-train.veri
+train.new<-train.new[-c(8954,2990,5534,9311,5733,4905,1997,155,5282,6230,9006,2436,2437,7753,1987,670,9472,3419,558,6849,725,2640,9067,4387,4187,2683,6478,
+4,23,40,45,90,185,323,329,413,481,494,501,529,567,578,583,658,714,717,722,747,748,766,795,814,850,864,894,907,912,925,939,
+7984,3556,1251,1305,9543,848,8113,6790,7912,1612,9125,2882,3516,2918,1406,8737,7320,2536,1130,5007,598,4494,1781,316,9076,83,6064,3016,1736,1809,2325,3104,
+953,971,976,987,1022,1026,1066,1092,1103,1117,1125,1155,1196,1199,1208,1211,1220,1225,1230,1252,1276,1297,1313,1348,1375,1388,1412,1425,1429,1456,1465,1509,
+2886,2320,2482,4446,9016,4720,8253,2032,7865,583,6582,3453,7097,7235,7942,2973,3840,5037,5350,2917,4725,2263,2978,2842,9097,2091,5239,4194,7056,6127,9538,5177,
+1527,1587,1590,1612,1646,1687,1788,1798,1804,1830,1848,1892,1897,1910,1912,1933,1943,1946,1948,1986,2008,2025,2094,2102,2240,2245,2284,2359,2364,2395,2408,2425,
+7957,1986,1797,2119,3835,4794,2448,6356,3827,663,2072,683,2222,8373,1661,689,1262,8990,7183,615,2580,4908,1409,8738,1663,6808,7081,6161,5630,8606,317,2777,
+2464,2482,2483,2589,2591,2637,2645,2703,2714,2722,2742,2780,2800,2803,2835,2866,2901,2902,2903,2912,2925,2939,2979,2986,3025,3060,3079,3096,3120,3127,3149,3150,
+6347,1774,1594,3413,9367,5419,115,7321,7110,2462,8271,6079,2517,3067,639,881,5611,4554,3604,474,7584,8275,5660,5530,5565,4658,3759,1482,6102,7092,3484,1570,
+3153,3160,3166,3189,3204,3289,3295,3310,3315,3351,3378,3393,3399,3418,3419,3420,3445,3479,3488,3509,3520,3535,3592,3645,3675,3689,3722,3728,3794,3804,3808,3828,
+2887,8828,3900,6204,7341,6763,8132,4328,8003,781,5225,4938,5164,6705,5449,4003,3368,9069,7901,3638,1968,2336,2994,8382,9061,4663,4126,5284,6211,9075,6985,2396,
+3838,3871,3886,3898,3914,3920,3943,3954,3987,3989,4037,4039,4071,4084,4116,4132,4168,4183,4188,4195,4211,4231,4235,4256,4262,4292,4305,4321,4323,4333,4337,4342,
+9019,2450,6100,4096,5068,8310,1514,4624,9010,6040,2408,8593,4504,5556,9,8412,1054,1112,4853,984,380,1173,7612,2041,183,5864,8917,1584,3532,3493,7718,6153,
+4372,4440,4468,4487,4496,4498,4534,4542,4556,4589,4604,4623,4628,4672,4674,4693,4741,4753,4756,4855,4907,4913,4933,4934,4975,4976,4977,5009,5017,5032,5034,5128,
+7711,4793,607,2674,7626,1509,5323,5647,7945,6815,2061,8085,4929,790,9160,6158,4068,3022,4767,8062,3018,8983,7238,8610,7724,7032,7060,8105,5136,7328,1469,5073,
+5147,5149,5156,5162,5201,5208,5232,5234,5274,5278,5283,5298,5310,5315,5328,5329,5337,5349,5372,5395,5456,5477,5496,5553,5579,5633,5640,5660,5673,5685,5701,5795,
+3976,9522,8569,9133,5806,7108,121,5994,1976,7220,2501,512,7808,8997,1129,5148,22,5893,3485,6784,3403,2955,7330,5189,5018,5874,4871,2475,3661,2373,4850,1620,
+5807,5809,5828,5831,5846,5887,5898,5905,5909,5921,5926,5951,6019,6049,6096,6131,6159,6170,6182,6196,6200,6235,6250,6284,6292,6305,6308,6325,6339,6351,6375,6410,
+3943,858,6330,9024,2386,3767,6058,239,8433,6279,25,3189,4638,6311,
+6413,6431,6439,6441,6486,6529,6550,6584,6604,6610,6618,6647,6652,6654
+),]
+modelbest2=lm(PE^(-2)~AT+V+AP+RH,data=train.new)
+cooksd <- cooks.distance(modelbest2)
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance") 
+abline(h = 4/nrow(train.new), col="red")  
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4/nrow(train.new), names(cooksd),""), col="red")
+train.new<-train.new[-c(3384,7665,4219,3896,8718,8193,7399,5605,931,6157,8188,4326,5870,7376,7428,1920,3523,8733,1806,2880,2788,8714,8077,5687,945,1569,9478,8072,6758,428,8592,612,7898,5817,267,1374,8103,9432,7650,3978,7188,2646,141,8424,4577,7648,4895,7069)]
+
+
+```
+
+
+
+
+
+
+ Grafikte hepsi çok iç içe girdiği için okunmuyordu, okuyabildiklerimi çıkarttım veri setinden;
+etkin gözlemler:
+ 3384,7665,4219,3896,8718,8193,7399,5605,931,6157,8188,4326,5870,7376,7428,1920,3523,8733,1806,2880,2788,8714,8077,5687,945,1569,9478,8072,6758,428,8592,612,7898,5817,267,1374,8103,9432,7650,3978,7188,2646,141,8424,4577,7648,4895,7069
+
+```{r}
+bptest(modelbest2)
+jarqueberaTest(modelbest2$residuals)
+vif(modelbest2)
+
+
+```
+bptest, H0:hatalar sabit varyanslıdır, H1: hatalar sabit varyanslı değildir. p<0.05 olduğu için H0 red edilir.
+jarquberatest, H0:hatalar normal dağılır, H1: hatalar normal dağılmaz. p<0.05 olduğu için H0 red edilir.
+vif, Modelin vif değerleri arasında 5 den fazla olan olduğu için çoklu doğrusal bağlantı vardır.
+modelde çoklu doğrusal bağlantı sorunu, değişken varyans sorunu ve normal dağılmama sorunu bulunmaktadır.
+modeller arasında seçim yaparken ki diğer alternatif modele de baktıgımızda onda da aynı sorunları görmekteyiz,modelden AP değişkenini çıkartınca da sonuç değişmedi.
+
+
+11.Yeni bir gözlem değeri için %95’lik güven aralığını ve/veya kestirim aralığını bularak yorumlayınız
+```{r}
+modelpred<-lm(PE~AT+V+AP+RH,data=train.new)
+new <- data.frame(AT=c(15),V=c(40),AP=c(990),RH=c(45))
+predictnewconf=predict(modelpred,new,interval="confidence")
+cbind(new,predictnewconf)
+
+
+
+
+```
+AT 15, V 40, AP 990 ve RH 45 iken ortalama PE ortalama 469.9, %95 güvenle PE 469.05 ile 470.72 arasında değişir.
+
+B.İkili Lojistik Regresyon Analizi
+
+```{r}
+
+
+
+setwd("C:/Users/cberk/Downloads")
+lowbwt<-read.table("lowbwt.txt")
+data<-lowbwt[,-11]
+data.new<-data[,-1]
+colnames(data.new)<-c("LOW","AGE","LWT","RACE","SMOKE","PTL","HT","UI","FTV")
+
+
+```
+
+1.Bağımlı değişken ile bağımsız değişkenler arasındaki ilişkiyi ikili lojistik regresyon modeli le modelleyiniz. Katsayılardan LWT ve HT değişkenlerine ait katsayı tahminlerini yorumlayınız.
+```{r}
+as.factor(data.new$RACE)
+as.factor(data.new$SMOKE)
+as.factor(data.new$PTL)
+as.factor(data.new$HT)
+as.factor(data.new$UI)
+as.factor(data.new$FTV)
+```
+
+
+```{r}
+
+model.lwt=glm(LOW~AGE+LWT+RACE+SMOKE+PTL+HT+UI+FTV, data=data.new,family=binomial)
+summary(model.lwt)
+```
+LWT si 1 br daha büyük olan bir kişinin düşük kilolu bebek dünyaya getirme oddsu LWT si 1 br daha küçük olan bir kişininkinden %9.9 daha azdır.
+
+HT si 1 olan birinin düşük kilolu bebek dünyaya getirme oddsu HT si 0 olan bir kişininkinden %62.3 daha fazladır.
+
+
+
+
+
+2.Model geçerliliğini hipotezleri belirterek %5 önem düzeyinde test ediniz.
+
+```{r}
+G=model.lwt$null.deviance-model.lwt$deviance
+G
+qchisq(0.95,1)
+
+```
+H0:Katsayıların hepsi sıfıra eşit
+H1:Katsayılardan en az biri sıfırdan farklı
+G değeri 30.48, qchisq değeri alfa 0.05 önem düzeyi için 3.84 çıktı. G değeri 3.84 den büyük olduğu için h0 red edilir, %95 güvenle model geçerlidir.
+
+3.Adımsal regresyon yöntemi ile değişkenleri eleyerek final modeli oluşturunuz. Uç değer, etkin gözlem kontrollerinizi yaparak veri setine son halini veriniz
+```{r}
+step.model <- model.lwt %>% stepAIC(trace = FALSE)
+coef(step.model)
+
+
+
+```
+
+
+```{r}
+
+lwt.best<-glm(LOW~LWT+RACE+SMOKE+PTL+HT+UI,data=data.new,family=binomial)
+
+pearson.res.lwt<-residuals(lwt.best,type="pearson")
+deviance.res.lwt<-residuals(lwt.best,type="deviance")
+cbind(pearson.res.lwt,deviance.res.lwt)
+
+
+
+```
+
+
+
+
+```{r}
+influenceIndexPlot(lwt.best)
+```
+72 ve  153. gözlemler etkin gözlem
+128 ve 152. gözlemler kaldıraç noktası
+Hiçbir değerlendirme de ortak bir gözlem değeri olmadığı için modelden herhangi bir gözlemi çıkartmadık.
+
+
+4.En uygun cut point değeri belirlemek için uyguladığınız yöntemi belirterek, Özgüllük ve Duyarlılık değerlerini hesaplayınız ve yorumlayınız
+```{r}
+par(pty="s")
+roc(data.new$LOW,lwt.best$fitted.values,plot=TRUE, legacy.axes=TRUE,percent = TRUE, xlab="False Positive Percentage", ylab="True Positive Percentage")
+roc.info<-roc(data.new$LOW,lwt.best$fitted.values,legacy.axes=TRUE)
+roc.df<-data.frame(tpp=roc.info$sensitivities*100,fpp=(1-roc.info$specificities)*100,thresholds=roc.info$thresholds)
+mean(roc.df$tpp)
+mean(roc.df$fpp)
+```
+cut point belirlemek için roc analiz yöntemi kullanılmıştır.
+tpp:64.62,sensitivity si 64.62 çıkmıştır,gerçekte düşük kilolu bebek doğurmuş olanların modelde de düşük kilolu bebek doğurmuş olması oranı
+
+fpp:42.2 ,specificity si 42.2 çıkmıştır, gerçekte düşük kilolu bebek doğurmamış olanların modelde de düşük kilolu bebek doğurmamış çıkması oranı
+
+
+
+```{r}
+new.data<-data.frame(LWT=c(100),RACE=c(1),SMOKE=c(1),PTL=c(0),HT=c(0),UI=c(1))
+
+prediction<-predict(lwt.best,newdata=new.data,type="response")
+
+prediction
+```
+Kilosu 100, ten rengi beyaz, sigara içmeyen,daha once premature dogum yapmamıs, hipertansiyonu olmayan, UI si olan birinin düşük kiloda bebek doğurma olasılığı
+%51.6 dır.
